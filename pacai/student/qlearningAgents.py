@@ -1,5 +1,8 @@
 from pacai.agents.learning.reinforcement import ReinforcementAgent
 from pacai.util import reflection
+from pacai.util import probability
+import math
+import random
 
 class QLearningAgent(ReinforcementAgent):
     """
@@ -45,7 +48,7 @@ class QLearningAgent(ReinforcementAgent):
     def __init__(self, index, **kwargs):
         super().__init__(index, **kwargs)
 
-        # You can initialize Q-values here.
+        self.qValues = {}
 
     def getQValue(self, state, action):
         """
@@ -53,9 +56,10 @@ class QLearningAgent(ReinforcementAgent):
         and `pacai.core.directions.Directions`.
         Should return 0.0 if the (state, action) pair has never been seen.
         """
-
+        if (state, action) in self.qValues:
+            return self.qValues[(state, action)]
         return 0.0
-
+    
     def getValue(self, state):
         """
         Return the value of the best action in a state.
@@ -68,8 +72,18 @@ class QLearningAgent(ReinforcementAgent):
         which returns the actual best action.
         Whereas this method returns the value of the best action.
         """
-
-        return 0.0
+        Actions = self.getLegalActions(state)
+        if len(Actions) == 0:
+            return 0.0
+        value = math.inf * -1
+        for action in Actions:
+            score = self.getQValue(state, action)
+            if value < score:
+                value = score
+        if value == math.inf * -1:
+            value = 0
+        
+        return value
 
     def getPolicy(self, state):
         """
@@ -83,6 +97,38 @@ class QLearningAgent(ReinforcementAgent):
         which returns the value of the best action.
         Whereas this method returns the best action itself.
         """
+        Actions = self.getLegalActions(state)
+        if len(Actions) <= 0:
+            return None
+        bestValue = self.getValue(state)
+        bestActions = []
+        for action in Actions:
+            score = self.getQValue(state, action)
+            if score == bestValue:
+                bestActions.append(action)
+        if len(bestActions) > 0:
+            return random.choice(bestActions)
+        else:
+            return random.choice(Actions)
+        
+    def update(self, state, action, nextState, reward):
+        if ((state, action) not in self.qValues):
+            self.qValues[(state, action)] = 0
+        nextValue = self.getValue(nextState)
+        self.qValues[(state, action)] += self.getAlpha() * \
+            (reward + (self.getDiscountRate() * nextValue) - self.qValues[(state, action)])
+
+    def getAction(self, state):
+        """
+        Returns the policy at the state (no exploration).
+        """
+        Actions = self.getLegalActions(state)
+        if (len(Actions) <= 0):
+            return None
+        if (probability.flipCoin(self.getEpsilon())):
+            return random.choice(Actions)
+        else:
+            return self.getPolicy(state)
 
         return None
 
@@ -127,15 +173,40 @@ class ApproximateQAgent(PacmanQAgent):
     `pacai.agents.learning.reinforcement.ReinforcementAgent.update`:
     Should update your weights based on transition.
 
-    DESCRIPTION: <Write something here so we know what you did.>
     """
 
     def __init__(self, index,
-            extractor = 'pacai.core.featureExtractors.IdentityExtractor', **kwargs):
+         extractor = 'pacai.core.featureExtractors.IdentityExtractor', **kwargs):
         super().__init__(index, **kwargs)
-        self.featExtractor = reflection.qualifiedImport(extractor)
-
+        self.featureExtractor = reflection.qualifiedImport(extractor)
         # You might want to initialize weights here.
+        self.wieghts = {}
+        PacmanQAgent.__init__(self, index, **kwargs)
+
+    def update(self, state, action, nextState, reward):
+        featurez = self.featureExtractor.getFeatures(self, state, action) # extract each feature from the current game state
+        nextValue = self.getValue(nextState)
+        CurrentQValue = self.getQValue(state, action) # get the current q value
+        for feature in featurez:
+            # weight corrections = next q value - current q value
+            # next q value  = current reward + discount rate * next value
+            # changing rewards and discount rate allows allows for the ai to be more "adventrous and less logical" and q values of each next state will matter less
+            # discount rate is used to converage infinte series and will model the uncertanty of events in the real world
+            correction = ((reward + self.getDiscountRate() * nextValue) - CurrentQValue) 
+            if feature not in self.wieghts:
+                self.wieghts[feature] = self.getAlpha() + correction * featurez[feature]
+            else:
+                self.wieghts[feature] += self.getAlpha() + correction * featurez[feature]
+
+    def getQValue(self, state, action):
+        Value = 0
+        weight = self.wieghts
+        featurez = self.featureExtractor.getFeatures(self, state, action)
+        for feature in featurez:
+            if feature not in weight:
+                continue
+            Value += weight[feature] * featurez[feature]
+        return Value
 
     def final(self, state):
         """

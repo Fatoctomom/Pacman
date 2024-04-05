@@ -1,4 +1,5 @@
 from pacai.agents.learning.value import ValueEstimationAgent
+import math
 
 class ValueIterationAgent(ValueEstimationAgent):
     """
@@ -37,9 +38,24 @@ class ValueIterationAgent(ValueEstimationAgent):
         self.discountRate = discountRate
         self.iters = iters
         self.values = {}  # A dictionary which holds the q-values for each state.
-
+        
+        states = self.mdp.getStates()
+        self.values = {state: 0 for state in states}
         # Compute the values here.
-        raise NotImplementedError()
+        for itearion in range(self.iters):
+            values = self.values.copy()
+            for state in states:
+                value = math.inf * -1
+                actions = self.mdp.getPossibleActions(state)
+                for action in actions:
+                    score = self.getQValue(state, action)
+                    if value < score:
+                        value = score
+                if value == math.inf * -1:
+                    value = 0
+                values[state] = value
+        
+            self.values = values
 
     def getValue(self, state):
         """
@@ -54,3 +70,24 @@ class ValueIterationAgent(ValueEstimationAgent):
         """
 
         return self.getPolicy(state)
+    
+
+    def getPolicy(self, state):
+        Actions = self.mdp.getPossibleActions(state)
+        bestAction = None
+        maxScore = math.inf * -1
+        for action in Actions:
+            score = self.getQValue(state, action)
+            if score > maxScore:
+                maxScore = score
+                bestAction = action
+        return bestAction
+    
+    def getQValue(self, state, action):
+        qValue = 0
+        for tS, probabilty in self.mdp.getTransitionStatesAndProbs(state, action):
+            # print(state)
+            # print(transitionState)
+            qValue += probabilty * \
+                (self.mdp.getReward(state, action, tS) + (self.discountRate * self.values[tS]))
+        return qValue
